@@ -1,0 +1,16 @@
+{
+  "name": "my-project",
+  "version": "1.0.0",
+  "devDependencies": {
+    "@gltf-transform/cli": "^4.3.0"
+  },
+  "scripts": {
+    "dev":"vite",
+    "build": "vite build",
+    "preview":"vite preview",
+    "inspect:duck": "gltf-transform inspect ./assets/library/duck.glb"
+  },
+  "dependencies": {
+    "openai": "^6.17.0"
+  }
+}
