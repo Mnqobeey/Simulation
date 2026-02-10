@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>Nexera Text-to-3D</title>
+
+    <style>
+      :root{
+        --bg:#0b0f1a;
+        --panel:rgba(0,0,0,0.72);
+        --border:rgba(255,255,255,0.14);
+        --border2:rgba(255,255,255,0.18);
+        --muted:rgba(255,255,255,0.82);
+        --muted2:rgba(255,255,255,0.70);
+        --chip:rgba(255,255,255,0.10);
+        --barBg:rgba(255,255,255,0.10);
+        --barFill:rgba(255,255,255,0.86);
+        --shadow:0 14px 44px rgba(0,0,0,0.45);
+        --radius:14px;
+      }
+
+      html,body{
+        height:100%;
+        margin:0;
+        background:var(--bg);
+        font-family:system-ui, Arial;
+        color:#fff;
+        overflow:hidden;
+      }
+
+      #app{position:fixed;inset:0;overflow:hidden;}
+
+      /* Panel */
+      #ui{
+        position:fixed;
+        top:16px; left:16px;
+        width:min(560px, calc(100vw - 32px));
+        background:var(--panel);
+        border:1px solid rgba(255,255,255,0.08);
+        border-radius:var(--radius);
+        box-shadow:var(--shadow);
+        padding:14px;
+        z-index:10;
+        backdrop-filter: blur(10px);
+      }
+
+      #headerRow{
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        gap:10px;
+      }
+
+      #title{
+        font-weight:850;
+        font-size:14px;
+        display:flex;
+        align-items:center;
+        gap:8px;
+        letter-spacing:0.2px;
+      }
+
+      /* Prototype badge (less LIVE, more honest) */
+      #badge{
+        font-size:11px;
+        padding:3px 8px;
+        border-radius:999px;
+        background:rgba(59,130,246,0.18);
+        border:1px solid rgba(59,130,246,0.35);
+        color:rgba(255,255,255,0.95);
+        user-select:none;
+      }
+
+      /* Hint copy */
+      #hint{
+        margin-top:10px;
+        font-size:12px;
+        line-height:1.45;
+        color:var(--muted2);
+      }
+      #hint b{color:#fff;}
+
+      /* Chips as buttons */
+      #chips{
+        display:flex;
+        gap:8px;
+        flex-wrap:wrap;
+        margin-top:10px;
+      }
+
+      .chip{
+        appearance:none;
+        border:1px solid var(--border);
+        background:rgba(255,255,255,0.10);
+        color:rgba(255,255,255,0.92);
+        border-radius:999px;
+        padding:7px 10px;
+        font-size:11px;
+        cursor:pointer;
+        transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
+        user-select:none;
+      }
+      .chip:hover{
+        transform: translateY(-1px);
+        background: rgba(255,255,255,0.14);
+        border-color: rgba(255,255,255,0.22);
+      }
+      .chip:active{ transform: translateY(0px); }
+
+      /* Input row */
+      #row{
+        display:flex;
+        gap:8px;
+        margin-top:12px;
+      }
+
+      input{
+        flex:1;
+        padding:10px 12px;
+        border-radius:10px;
+        border:1px solid var(--border2);
+        background:rgba(255,255,255,0.10);
+        color:#fff;
+        outline:none;
+      }
+      input:focus{
+        border-color: rgba(255,255,255,0.28);
+        box-shadow: 0 0 0 4px rgba(255,255,255,0.06);
+      }
+
+      button{
+        padding:10px 12px;
+        border-radius:10px;
+        border:none;
+        background:#fff;
+        font-weight:850;
+        cursor:pointer;
+        transition: transform 120ms ease, opacity 120ms ease;
+      }
+      button:hover{ transform: translateY(-1px); }
+      button:active{ transform: translateY(0px); }
+
+      button.secondary{
+        background:rgba(255,255,255,0.12);
+        color:#fff;
+        border:1px solid var(--border2);
+        font-weight:650;
+      }
+      button:disabled{ opacity:.6; cursor:not-allowed; transform:none; }
+
+      /* Tools */
+      #tools{
+        display:flex;
+        gap:8px;
+        flex-wrap:wrap;
+        margin-top:10px;
+        align-items:center;
+      }
+
+      label{
+        display:flex;
+        align-items:center;
+        gap:6px;
+        font-size:12px;
+        padding:8px 10px;
+        border-radius:10px;
+        border:1px solid var(--border);
+        background:rgba(255,255,255,0.07);
+        user-select:none;
+      }
+
+      /* Status */
+      #status{
+        margin-top:10px;
+        font-size:13px;
+        color:var(--muted);
+      }
+
+      /* Progress bar */
+      #progressWrap{
+        margin-top:8px;
+        height:10px;
+        border-radius:999px;
+        background:var(--barBg);
+        border:1px solid rgba(255,255,255,0.12);
+        overflow:hidden;
+        position:relative;
+      }
+      #progressWrap.hidden{ display:none; }
+
+      #progressFill{
+        height:100%;
+        width:0%;
+        background:var(--barFill);
+        border-radius:999px;
+        transition:width 120ms linear;
+      }
+
+      #progressWrap.generating::after{
+        content:"";
+        position:absolute;
+        inset:0;
+        background:linear-gradient(90deg, transparent, rgba(255,255,255,0.25), transparent);
+        transform:translateX(-100%);
+        animation:shimmer 1.1s infinite;
+      }
+      @keyframes shimmer{
+        0%{transform:translateX(-100%)}
+        100%{transform:translateX(100%)}
+      }
+
+      /* Dev JSON (hidden by default) */
+      #json{
+        margin-top:10px;
+        font-family:ui-monospace, Menlo, Consolas, monospace;
+        font-size:12px;
+        background:rgba(255,255,255,0.06);
+        border:1px solid rgba(255,255,255,0.12);
+        border-radius:10px;
+        padding:10px;
+        max-height:220px;
+        overflow:auto;
+        white-space:pre-wrap;
+        display:none;
+      }
+
+      /* Toast */
+      #toast{
+        position:fixed;
+        right:16px; bottom:16px;
+        max-width:min(420px, calc(100vw - 32px));
+        background:rgba(0,0,0,0.78);
+        border:1px solid rgba(255,255,255,0.12);
+        padding:10px 12px;
+        border-radius:12px;
+        box-shadow:0 10px 30px rgba(0,0,0,0.35);
+        opacity:0;
+        transform:translateY(8px);
+        pointer-events:none;
+        transition:opacity 160ms ease, transform 160ms ease;
+        font-size:12px;
+        line-height:1.35;
+        z-index:99;
+      }
+      #toast.show{opacity:1; transform:translateY(0);}
+
+      /* Responsive: panel to bottom on small screens */
+      @media (max-width: 520px){
+        #ui{
+          top:auto;
+          bottom:16px;
+          left:16px;
+          right:16px;
+          width:auto;
+        }
+      }
+    </style>
+  <!-- AVATAR_CLEAN_MODE -->
+<style>
+  /* Avatar mode: hide EVERYTHING, then show only #app + #avatarPanel (and their children) */
+  body.avatar-mode * {
+    visibility: hidden !important;
+    pointer-events: none !important;
+  }
+  body.avatar-mode #app,
+  body.avatar-mode #app * ,
+  body.avatar-mode #avatarPanel,
+  body.avatar-mode #avatarPanel * {
+    visibility: visible !important;
+    pointer-events: auto !important;
+  }
+</style>
+<script>
+  (function(){
+    const mode = new URLSearchParams(location.search).get("mode") || "asset";
+    if (mode === "avatar") document.body.classList.add("avatar-mode");
+  })();
+</script>
+<!-- END_AVATAR_CLEAN_MODE -->
+</head>
+
+  <body>
+    <div id="app"></div>
+
+    <div id="ui">
+      <div id="headerRow">
+        <div id="title">
+          Nexera <span style="opacity:.9;font-weight:750;">Text-to-3D</span>
+          <span id="badge" title="Prototype demo">Prototype</span>
+        </div>
+
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button id="helpBtn" type="button" class="secondary" style="padding:8px 10px;">Help</button>
+          <button id="devBtn" type="button" class="secondary" style="padding:8px 10px;" title="Toggle dev details">Dev</button>
+        </div>
+      </div>
+
+      <div id="hint">
+        Describe an object, then press <b>Generate</b>. The model updates in the scene.<br/>
+        Try: <b>low poly red fire extinguisher</b>, <b>blue sphere</b>, <b>duck</b>, <b>lamp</b>.
+      </div>
+
+      <div id="chips" aria-label="Examples">
+        <button type="button" class="chip" data-preset="low poly red fire extinguisher">Fire extinguisher</button>
+        <button type="button" class="chip" data-preset="blue sphere">Blue sphere</button>
+        <button type="button" class="chip" data-preset="big green box">Green box</button>
+        <button type="button" class="chip" data-preset="duck">Duck</button>
+        <button type="button" class="chip" data-preset="lamp">Lamp</button>
+      </div>
+
+      <div id="row" role="search">
+        <input id="prompt" placeholder='Describe an object e.g. "a low poly red fire extinguisher"' />
+        <button id="run" aria-label="Generate model">Generate</button>
+      </div>
+
+      <div id="tools" aria-label="View tools">
+        <button id="resetView" type="button" class="secondary">Reset view</button>
+        <button id="centerObj" type="button" class="secondary">Center object</button>
+        <label title="Hold Shift and drag to reposition">
+          <input id="snapGrid" type="checkbox" /> Snap to grid
+        </label>
+      </div>
+
+      <div id="status" aria-live="polite">Ready.</div>
+      <div id="progressWrap" class="hidden" aria-hidden="true"><div id="progressFill"></div></div>
+      <div id="json">{}</div>
+    </div>
+
+    <div id="toast"></div>
+
+    <script type="module">
+  const mode = new URLSearchParams(location.search).get("mode") || "asset";
+  const entry = mode === "avatar" ? "/src/main-avatar.js" : "/src/main.js";
+  import(entry);
+</script>
+  </body>
+</html>

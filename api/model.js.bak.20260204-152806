@@ -1,0 +1,81 @@
+import fs from "fs";
+import path from "path";
+
+export default async function handler(req, res) {
+  try {
+    // CORS (safe for demo)
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+    if (req.method === "OPTIONS") return res.status(204).end();
+    if (req.method !== "POST") return res.status(405).json({ error: "Use POST" });
+
+    const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
+    const promptRaw = (body.prompt || "").toString().trim();
+    if (!promptRaw) return res.status(400).json({ error: "Missing prompt" });
+
+    // Read library index from public (static files on Vercel)
+    const indexPath = path.join(process.cwd(), "public", "assets", "library", "index.json");
+    if (!fs.existsSync(indexPath)) {
+      return res.status(500).json({ error: "Library index.json missing", expectedPath: indexPath });
+    }
+
+    const index = JSON.parse(fs.readFileSync(indexPath, "utf8"));
+    const aliases = index.aliases || {};
+    const items = index.items || [];
+
+    const p = promptRaw.toLowerCase();
+
+    // 1) alias exact match
+    let file = null;
+    if (aliases[p]) file = aliases[p];
+
+    // 2) tag match (items list)
+    if (!file && items.length) {
+      for (const it of items) {
+        const tags = (it.tags || []).map(t => String(t).toLowerCase());
+        if (tags.some(t => p.includes(t))) {
+          // if item uses 'glb': "/assets/library/x.glb" convert to filename
+          if (it.glb) file = String(it.glb).split("/").pop();
+          break;
+        }
+      }
+    }
+
+    // 3) fallback: try common shapes
+    if (!file) {
+      if (p.includes("box")) file = "box.glb";
+      else if (p.includes("sphere")) file = "sphere.glb";
+      else if (p.includes("duck")) file = "duck.glb";
+      else if (p.includes("lamp")) file = "lamp.glb";
+      else if (p.includes("helmet") || p.includes("hard hat") || p.includes("hardhat")) file = "helmet.glb";
+      else if (p.includes("extinguisher")) file = "fire_extinguisher.glb";
+      else file = "duck.glb";
+    }
+
+    const expected = path.join(process.cwd(), "public", "assets", "library", file);
+    if (!fs.existsSync(expected)) {
+      return res.status(500).json({
+        error: "Mapped GLB missing on disk",
+        file,
+        expectedPath: expected
+      });
+    }
+
+    const stages = [
+      { id: "interpret", label: "Interpreting prompt" },
+      { id: "select", label: "Selecting 3D asset" },
+      { id: "prep", label: "Preparing model" },
+      { id: "render", label: "Rendering in viewer" }
+    ];
+
+    // IMPORTANT: url must be public path (no /public prefix)
+    return res.status(200).json({
+      stages,
+      model: { url: `/assets/library/${file}`, file, source: "local-library" }
+    });
+  } catch (e) {
+    return res.status(500).json({ error: "API crashed", detail: String(e?.message || e) });
+  }
+}

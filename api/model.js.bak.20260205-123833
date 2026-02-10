@@ -1,0 +1,237 @@
+import OpenAI from "openai";
+
+export const config = { runtime: "nodejs" };
+
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+async function generateEducationalDescription(prompt) {
+  const instruction = `
+You are an instructional safety & training assistant.
+Given an object description, write a short educational description for learners.
+
+Rules:
+- 2–3 sentences max.
+- Explain what it is + where it is commonly used.
+- If relevant, include ONE simple safety or handling tip.
+- No markdown, no bullet points, plain text only.
+- If the object is abstract (e.g., "yellow sphere"), describe likely uses in training/visualization.
+`.trim();
+
+  const resp = await openai.responses.create({
+    model: "gpt-4.1-mini",
+    input: [
+      { role: "system", content: instruction },
+      { role: "user", content: `Object: ${prompt}` },
+    ],
+  });
+
+  return (
+    (resp.output_text || "").trim() ||
+    "This item can be used as a visual training aid to support identification, labeling, and scenario-based learning."
+  );
+}
+
+// Smarter non-AI fallback (educational + training-oriented)
+function fallbackDescription(prompt) {
+  const raw = String(prompt || "").trim();
+  const t = raw.toLowerCase();
+
+  // --- Keep detailed known-object descriptions (high quality + consistent) ---
+  if (t.includes("fire extinguisher")) {
+    return "A fire extinguisher is a safety device used to control small fires in workplaces and public buildings. It is typically mounted in accessible areas for emergencies. Ensure it is serviced regularly and that the pressure gauge indicates it is ready for use.";
+  }
+  if (t.includes("hard hat") || t.includes("helmet")) {
+    return "A hard hat is protective headgear used on construction and industrial sites to reduce the risk of head injuries. It helps protect against falling objects and accidental impacts. Always ensure the strap and fit are secure before entering a work area.";
+  }
+  if (t.includes("safety goggles") || (t.includes("goggles") && t.includes("safety"))) {
+    return "Safety goggles protect the eyes from dust, debris, chemical splashes, and flying particles. They are commonly used in workshops, labs, and industrial environments. Ensure they fit properly and keep lenses clean for clear visibility.";
+  }
+  if (t.includes("gloves") || t.includes("safety gloves")) {
+    return "Protective gloves help reduce the risk of cuts, burns, chemical exposure, or contamination depending on the glove type. They are widely used in construction, manufacturing, and laboratory work. Choose gloves suited to the task and replace them if torn or contaminated.";
+  }
+  if (t.includes("first aid kit") || (t.includes("first") && t.includes("aid"))) {
+    return "A first aid kit contains basic medical supplies used to treat minor injuries and stabilize a person until professional help is available. It should be accessible in workplaces, vehicles, and public facilities. Regularly check contents and expiry dates so the kit remains ready for emergencies.";
+  }
+  if (t.includes("warning sign") || (t.includes("sign") && (t.includes("warning") || t.includes("caution")))) {
+    return "Warning and caution signs communicate hazards and safe behavior in an area, helping prevent incidents. They are commonly used in workplaces, construction sites, and public facilities. Place signs where they are clearly visible and keep them updated to match current risks.";
+  }
+  if (t.includes("lamp") || t.includes("light")) {
+    return "A lamp is a lighting device used to improve visibility in homes, offices, and workspaces. In training environments it can help learners identify hazards and safe work zones. Avoid placing lamps near flammable materials and ensure cables do not create trip hazards.";
+  }
+  if (t.includes("duck")) {
+    return "A duck is often used as a simple demo object in 3D scenes to validate materials, lighting, and camera controls. In training simulations it helps learners test object selection, interaction flows, and scene updates. Use it as a consistent reference when verifying render changes.";
+  }
+
+  // --- Dynamic fallback for abstract prompts (blue sphere, green box, etc.) ---
+  const COLORS = [
+    "red","blue","green","yellow","black","white","orange","purple","pink",
+    "brown","gray","grey","silver","gold","cyan","magenta"
+  ];
+  const MATERIALS = ["metal","plastic","glass","wood","rubber","ceramic","paper","fabric","leather"];
+  const SIZES = ["tiny","small","mini","medium","large","big","huge","giant"];
+  const STYLES = ["low poly","low-poly","realistic","cartoon","wireframe","matte","glossy"];
+
+  const words = t.match(/[a-z]+/g) || [];
+
+  const pickFirst = (arr) => arr.find(x => t.includes(x));
+  const color = pickFirst(COLORS);
+  const material = pickFirst(MATERIALS);
+  const size = pickFirst(SIZES);
+
+  let style = null;
+  for (const s of STYLES) {
+    if (t.includes(s)) { style = s.replace("low-poly","low poly"); break; }
+  }
+
+  // Shape detection (with synonyms)
+  let shapeKey = null;
+  let shapeLabel = null;
+
+  const has = (...xs) => xs.some(x => words.includes(x) || t.includes(x));
+
+  if (has("sphere","ball","orb")) { shapeKey = "sphere"; shapeLabel = "sphere"; }
+  else if (has("cube")) { shapeKey = "cube"; shapeLabel = "cube"; }
+  else if (has("box","block","rectangular")) { shapeKey = "box"; shapeLabel = "box"; }
+  else if (has("cylinder","tube","canister","barrel")) { shapeKey = "cylinder"; shapeLabel = "cylinder"; }
+  else if (has("cone")) { shapeKey = "cone"; shapeLabel = "cone"; }
+  else if (has("pyramid")) { shapeKey = "pyramid"; shapeLabel = "pyramid"; }
+  else if (has("ring","torus")) { shapeKey = "ring"; shapeLabel = "ring"; }
+  else if (has("panel","plane","sheet")) { shapeKey = "panel"; shapeLabel = "panel"; }
+
+  // If no shape detected, use a generic “object”
+  if (!shapeLabel) {
+    shapeKey = "object";
+    shapeLabel = "training object";
+  }
+
+  // Build label
+  const parts = [];
+  if (size && !["big","large","huge","giant"].includes(size)) parts.push(size);
+  if (color) parts.push(color);
+  if (material) parts.push(material);
+  parts.push(shapeLabel);
+
+  const label = parts.join(" ");
+
+  // Shape-aware training use + safety tip
+  let use1 = "a marker for interaction points, hazards, or locations";
+  let use2 = "camera framing, scale perception, and basic collision checks";
+  let tip = "keep it out of walkways and ensure it is clearly visible";
+
+  switch (shapeKey) {
+    case "sphere":
+      use1 = "a marker for targets, sensors, or calibration points";
+      use2 = "lighting/shading, reflections, and smooth-surface rendering";
+      tip = "place it where it cannot roll into walkways or off edges";
+      break;
+    case "cube":
+    case "box":
+      use1 = "a placeholder for equipment, storage units, or boundary volumes";
+      use2 = "alignment, bounding boxes, and collision/contact behavior";
+      tip = "avoid stacking in unstable positions and keep pathways clear";
+      break;
+    case "cylinder":
+      use1 = "a stand-in for canisters, bottles, pipes, or containers";
+      use2 = "rotation, symmetry, and contact points on curved surfaces";
+      tip = "secure it upright to prevent rolling and keep it away from heat";
+      break;
+    case "cone":
+      use1 = "a visual indicator for direction, focus areas, or warning markers";
+      use2 = "visibility testing, attention guidance, and scene navigation";
+      tip = "place it where it won’t obstruct movement and remains clearly visible";
+      break;
+    case "pyramid":
+      use1 = "a visual landmark for orientation or a staged instruction target";
+      use2 = "depth cues, perspective checks, and silhouette recognition";
+      tip = "keep sharp corners away from high-traffic areas";
+      break;
+    case "ring":
+      use1 = "a target zone, portal marker, or alignment guide";
+      use2 = "camera alignment, aiming interactions, and motion-through checks";
+      tip = "ensure it is large and visible enough to prevent missteps";
+      break;
+    case "panel":
+      use1 = "a signboard, display surface, or boundary plane";
+      use2 = "texturing, UI readability, and occlusion/visibility tests";
+      tip = "mount it securely and avoid placing it where it blocks exits";
+      break;
+  }
+
+  const s1 = `A ${label} is a simple 3D training prop used in simulations to support identification, labeling, and interaction practice.`;
+  const s2 = `It can represent ${use1} and is useful for testing ${use2}.`;
+  const s3 = `Safety tip: ${tip}.`;
+
+  // 2–3 sentences, plain text
+  return `${s1} ${s2} ${s3}`;
+}
+
+function resolveModelUrlAndSource(prompt) {
+  const p = String(prompt || "").toLowerCase();
+
+  // Static library mapping
+  if (p.includes("duck")) return { url: "/assets/library/duck.glb", source: "static-library" };
+  if (p.includes("lamp")) return { url: "/assets/library/lamp.glb", source: "static-library" };
+
+  // Fallback: your pipeline endpoint (keeps model.url useful for any prompt)
+  return { url: `/api/model-glb?prompt=${encodeURIComponent(prompt)}`, source: "generated" };
+}
+
+export default async function handler(req, res) {
+  res.setHeader("x-nexera-handler", "vercel-fn-model-v5");
+
+  try {
+    const debug =
+      (req.query && String(req.query.debug) === "1") ||
+      (req.url && req.url.includes("debug=1"));
+
+    // Parse body safely
+    const body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
+    const prompt = String(body.prompt || "").trim();
+
+    if (!prompt) return res.status(400).json({ error: "Missing prompt" });
+
+    const hasKey = !!process.env.OPENAI_API_KEY;
+
+    const { url, source } = resolveModelUrlAndSource(prompt);
+
+    const stages = [
+      { name: "parse_prompt", pct: 10, status: "done" },
+      { name: "generate_mesh", pct: 60, status: "done" },
+      { name: "optimize_gltf", pct: 90, status: "done" },
+      { name: "publish", pct: 100, status: "done" },
+    ];
+
+    let description = "";
+    let aiStatus = "fallback"; // "ok" | "fallback" | "disabled"
+
+    if (hasKey) {
+      try {
+        description = await generateEducationalDescription(prompt);
+        aiStatus = "ok";
+      } catch {
+        // Keep demo safe + reliable
+        description = fallbackDescription(prompt);
+        aiStatus = "fallback";
+      }
+    } else {
+      description = fallbackDescription(prompt);
+      aiStatus = "disabled";
+    }
+
+    const payload = {
+      stages,
+      model: { url },
+      source,
+      description,
+      prompt,
+      hasKey,
+      aiStatus,
+    };
+
+    if (debug) payload.debug = true;
+
+    return res.status(200).json(payload);
+  } catch (e) {
+    return res.status(500).json({ error: "API crashed", detail: e?.message || String(e) });
+  }
+}

@@ -1,0 +1,77 @@
+import { NextResponse } from "next/server";
+import index from "@/public/assets/library/index.json";
+
+type LibraryItem = {
+  id: string;
+  name: string;
+  tags: string[];
+  glb: string;
+  scale?: number;
+  summary_hint?: string;
+};
+
+function pickBest(prompt: string) {
+  const p = prompt.toLowerCase();
+
+  let best = (index as any).items[0] as LibraryItem;
+  let bestScore = -1;
+
+  for (const item of (index as any).items as LibraryItem[]) {
+    let score = 0;
+
+    for (const t of item.tags) {
+      if (p.includes(t.toLowerCase())) score += 3;
+    }
+
+    if (p.includes(item.name.toLowerCase())) score += 2;
+
+    if (score > bestScore) {
+      bestScore = score;
+      best = item;
+    }
+  }
+
+  return { best, bestScore };
+}
+
+function makeSummary(prompt: string, name: string, hint?: string) {
+  const base = hint
+    ? `${name} is ${hint}.`
+    : `${name} is commonly used in safety training contexts.`;
+
+  const p = prompt.toLowerCase();
+  const extra =
+    p.includes("how") || p.includes("why")
+      ? " Always follow site procedures and inspect equipment before use."
+      : " In training, learners should identify it and understand correct usage.";
+
+  return base + extra;
+}
+
+export async function POST(req: Request) {
+  const body = await req.json().catch(() => ({}));
+  const prompt = String((body as any)?.prompt ?? "").trim();
+
+  if (!prompt) {
+    return NextResponse.json({ error: "Missing prompt" }, { status: 400 });
+  }
+
+  const { best } = pickBest(prompt);
+  const summary = makeSummary(prompt, best.name, best.summary_hint);
+
+  return NextResponse.json({
+    stages: [
+      { id: "interpret", label: "Interpreting prompt" },
+      { id: "select", label: "Selecting 3D asset" },
+      { id: "prep", label: "Preparing model" },
+      { id: "render", label: "Rendering in viewer" }
+    ],
+    model: {
+      id: best.id,
+      name: best.name,
+      glbUrl: best.glb,
+      scale: best.scale ?? 1
+    },
+    summary
+  });
+}

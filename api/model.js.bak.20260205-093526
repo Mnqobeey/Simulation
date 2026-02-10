@@ -1,0 +1,24 @@
+export default async function handler(req, res) {
+  try {
+    const body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
+    const prompt = (body.prompt || "").toLowerCase();
+
+    const url =
+      prompt.includes("duck") ? "/assets/library/duck.glb" :
+      prompt.includes("lamp") ? "/assets/library/lamp.glb" :
+      null;
+
+    res.status(200).json({
+      stages: [
+        { name: "parse_prompt", pct: 10, status: "done" },
+        { name: "generate_mesh", pct: 60, status: "done" },
+        { name: "optimize_gltf", pct: 90, status: "done" },
+        { name: "publish", pct: 100, status: "done" }
+      ],
+      model: { url },
+      prompt: body.prompt || ""
+    });
+  } catch (e) {
+    res.status(500).json({ error: "API crashed", detail: e?.message || String(e) });
+  }
+}

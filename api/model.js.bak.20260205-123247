@@ -1,0 +1,139 @@
+﻿import OpenAI from "openai";
+
+export const config = { runtime: "nodejs" };
+
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+async function generateEducationalDescription(prompt) {
+  const instruction = `
+You are an instructional safety & training assistant.
+Given an object description, write a short educational description for learners.
+
+Rules:
+- 2–3 sentences max.
+- Explain what it is + where it is commonly used.
+- If relevant, include ONE simple safety or handling tip.
+- No markdown, no bullet points, plain text only.
+- If the object is abstract (e.g., "yellow sphere"), describe likely uses in training/visualization.
+`.trim();
+
+  const resp = await openai.responses.create({
+    model: "gpt-4.1-mini",
+    input: [
+      { role: "system", content: instruction },
+      { role: "user", content: `Object: ${prompt}` },
+    ],
+  });
+
+  return (
+    (resp.output_text || "").trim() ||
+    "This item can be used as a visual training aid to support identification, labeling, and scenario-based learning."
+  );
+}
+
+// Smarter non-AI fallback (educational + training-oriented)
+function fallbackDescription(prompt) {
+  const p = String(prompt || "").toLowerCase();
+
+  if (p.includes("fire extinguisher")) {
+    return "A fire extinguisher is a safety device used to control small fires in workplaces and public buildings. It is typically mounted in accessible areas for emergencies. Ensure it is serviced regularly and that the pressure gauge indicates it is ready for use.";
+  }
+
+  if (p.includes("hard hat") || p.includes("helmet")) {
+    return "A hard hat is protective headgear used on construction and industrial sites to reduce the risk of head injuries. It helps protect against falling objects and accidental impacts. Always ensure the strap and fit are secure before entering a work area.";
+  }
+
+  if (p.includes("goggles") || p.includes("safety glasses")) {
+    return "Safety eyewear protects the eyes from dust, debris, and chemical splashes in workshops, labs, and industrial environments. Ensure it fits properly and keep lenses clean for clear visibility.";
+  }
+
+  if (p.includes("gloves")) {
+    return "Protective gloves reduce the risk of cuts, burns, chemical exposure, or contamination depending on the glove type. Choose gloves suited to the task and replace them if torn or contaminated.";
+  }
+
+  if (p.includes("first aid") || p.includes("first-aid")) {
+    return "A first aid kit contains basic supplies used to treat minor injuries and stabilize a person until help is available. Check contents and expiry dates regularly so it remains ready for emergencies.";
+  }
+
+  if (p.includes("warning") || p.includes("caution") || (p.includes("sign") && (p.includes("hazard") || p.includes("danger")))) {
+    return "Warning and caution signs communicate hazards and safe behavior in an area to prevent incidents. Place them where they are clearly visible and keep them updated to match current risks.";
+  }
+
+  if (p.includes("lamp") || p.includes("light")) {
+    return "A lamp is a lighting device used to improve visibility in homes, offices, and workspaces. In training environments it can help learners identify hazards and safe work zones. Avoid placing lamps near flammable materials and ensure cables do not create trip hazards.";
+  }
+
+  // Abstract / generic objects (e.g., “yellow sphere”)
+  return "This item can be used as a visual training aid to support identification, labeling, and scenario-based learning. In simulations, simple objects are often used as placeholders or markers to highlight locations, hazards, or interaction points. Learners can practice recognition and correct responses using these cues.";
+}
+
+function resolveModelUrlAndSource(prompt) {
+  const p = String(prompt || "").toLowerCase();
+
+  // Static library mapping
+  if (p.includes("duck")) return { url: "/assets/library/duck.glb", source: "static-library" };
+  if (p.includes("lamp")) return { url: "/assets/library/lamp.glb", source: "static-library" };
+
+  // Fallback: your pipeline endpoint (keeps model.url useful for any prompt)
+  return { url: `/api/model-glb?prompt=${encodeURIComponent(prompt)}`, source: "generated" };
+}
+
+export default async function handler(req, res) {
+  res.setHeader("x-nexera-handler", "vercel-fn-model-v5");
+
+  try {
+    const debug =
+      (req.query && String(req.query.debug) === "1") ||
+      (req.url && req.url.includes("debug=1"));
+
+    // Parse body safely
+    const body = typeof req.body === "string" ? JSON.parse(req.body) : (req.body || {});
+    const prompt = String(body.prompt || "").trim();
+
+    if (!prompt) return res.status(400).json({ error: "Missing prompt" });
+
+    const hasKey = !!process.env.OPENAI_API_KEY;
+
+    const { url, source } = resolveModelUrlAndSource(prompt);
+
+    const stages = [
+      { name: "parse_prompt", pct: 10, status: "done" },
+      { name: "generate_mesh", pct: 60, status: "done" },
+      { name: "optimize_gltf", pct: 90, status: "done" },
+      { name: "publish", pct: 100, status: "done" },
+    ];
+
+    let description = "";
+    let aiStatus = "fallback"; // "ok" | "fallback" | "disabled"
+
+    if (hasKey) {
+      try {
+        description = await generateEducationalDescription(prompt);
+        aiStatus = "ok";
+      } catch {
+        // Keep demo safe + reliable
+        description = fallbackDescription(prompt);
+        aiStatus = "fallback";
+      }
+    } else {
+      description = fallbackDescription(prompt);
+      aiStatus = "disabled";
+    }
+
+    const payload = {
+      stages,
+      model: { url },
+      source,
+      description,
+      prompt,
+      hasKey,
+      aiStatus,
+    };
+
+    if (debug) payload.debug = true;
+
+    return res.status(200).json(payload);
+  } catch (e) {
+    return res.status(500).json({ error: "API crashed", detail: e?.message || String(e) });
+  }
+}

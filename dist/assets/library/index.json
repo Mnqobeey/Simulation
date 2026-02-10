@@ -1,0 +1,18 @@
+{
+    "aliases":  {
+                    "duck":  "duck.glb",
+                    "helmet":  "helmet.glb",
+                    "damaged helmet":  "damaged-helmet.glb",
+                    "lamp":  "lamp.glb",
+                    "a low poly green fire extinguisher":  "fire_extinguisher.glb",
+                    "ball":  "duck.glb",
+                    "big green box":  "lamp.glb",
+                    "box":  "lamp.glb",
+                    "cube":  "lamp.glb",
+                    "fire extinguisher":  "fire_extinguisher.glb",
+                    "a low poly red fire extinguisher":  "fire_extinguisher.glb",
+                    "extinguisher":  "fire_extinguisher.glb",
+                    "blue sphere":  "sphere.glb",
+                    "sphere":  "sphere.glb"
+                }
+}
